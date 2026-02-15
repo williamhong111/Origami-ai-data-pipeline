@@ -197,6 +197,11 @@ No Python code changes required.
 
 ---
 
+## Presentation
+
+📊 [Project Slide Deck](Multimodal_Robotics_Data_Pipeline.pptx)
+---
+
 ## License
 
 CC-BY-4.0
