@@ -1,0 +1,90 @@
+# ============================================================
+# Isaac Sim / NVIDIA Mimic HDF5 → Origami AI Schema Mapping
+# ============================================================
+# This config tells dataloader.py where to find each modality
+# inside the NVIDIA HDF5 file structure.
+#
+# To add a new data source, copy this file, rename it, and
+# update the field paths to match the new source's structure.
+# ============================================================
+
+# --- Source metadata ---
+source_name: "isaac_sim_mimic"
+format: "hdf5"                       # file format: hdf5 | json | csv | rosbag
+demo_prefix: "data/demo_"            # HDF5 group path prefix for each episode
+
+# --- Schema metadata defaults ---
+metadata:
+  source: "simulation"
+  dataset_id: "nvidia_mimic_franka_stack"
+  robot_platform: "franka_panda"
+  environment: "sim"
+  frame_of_reference: "world"
+
+# --- Task context defaults ---
+task_context:
+  task_type: "manipulation"
+  goal_description: "Pick and stack three colored cubes in order: blue, red, green."
+  language_instruction:
+    text: "Stack the cubes in order: blue (bottom), red (middle), green (top)."
+    language: "en"
+    source: "scripted"
+  user_intent: "pick_and_place"
+  success_criteria: "All three cubes stacked in correct order."
+
+# --- Modality field mappings ---
+# Each key = unified modality name
+# Each value = HDF5 dataset path inside a demo group
+#
+# Example: for demo_0, "obs/joint_pos" means the full path
+# is "data/demo_0/obs/joint_pos"
+
+vision:
+  streams:
+    - name: "table_cam_rgb"
+      type: "rgb"
+      hdf5_path: "obs/table_cam"           # shape: (T, 200, 200, 3), uint8
+      sensor_id: "cam_table_rgb"
+      source_id: "isaac_sim/cam_table_rgb"
+
+    - name: "wrist_cam_rgb"
+      type: "rgb"
+      hdf5_path: "obs/wrist_cam"           # shape: (T, 200, 200, 3), uint8
+      sensor_id: "cam_wrist_rgb"
+      source_id: "isaac_sim/cam_wrist_rgb"
+
+    - name: "table_cam_depth"
+      type: "depth"
+      hdf5_path: "obs/table_cam_depth"     # shape: (T, 200, 200, 1), float32
+      sensor_id: "cam_table_depth"
+      source_id: "isaac_sim/cam_table_depth"
+
+proprioception:
+  joint_pos:
+    hdf5_path: "obs/joint_pos"             # shape: (T, 9), float32
+  joint_vel:
+    hdf5_path: "obs/joint_vel"             # shape: (T, 9), float32
+  eef_pos:
+    hdf5_path: "obs/eef_pos"              # shape: (T, 3), float32
+  eef_quat:
+    hdf5_path: "obs/eef_quat"             # shape: (T, 4), float32
+  gripper_pos:
+    hdf5_path: "obs/gripper_pos"           # shape: (T, 2), float32
+  sensor_id: "franka_joint_state"
+  source_id: "isaac_sim/franka_panda"
+
+actions:
+  hdf5_path: "actions"                     # shape: (T, 7), float32
+  # 7D = 6D relative end-effector motion + 1D gripper action
+
+# --- Modalities NOT present in this source ---
+# dataloader will output empty arrays for these
+audio: null
+tactile: null
+imu: null
+
+# --- Simulation-specific sampling info ---
+# Isaac Sim Mimic runs at a fixed control rate (no real timestamps)
+sampling:
+  control_rate_hz: 20.0                    # approximate control frequency
+  # Timestamps will be generated synthetically by the normalizer

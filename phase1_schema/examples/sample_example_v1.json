@@ -1,0 +1,109 @@
+{
+  "schema_version": "v1.0",
+  "sample_id": "example_0001",
+  "global_timestamp": {
+    "time_base": "unix_epoch_ms",
+    "start_ts": 1738620000000,
+    "end_ts": 1738620005000
+  },
+  "task_context": {
+    "task_id": "pick_place_red_block_001",
+    "task_type": "manipulation",
+    "goal_description": "Pick the red block and place it into the bin.",
+    "language_instruction": {
+      "text": "Pick the red block and place it into the bin.",
+      "language": "en",
+      "source": "human"
+    },
+    "user_intent": "pick_and_place",
+    "success_criteria": "Red block is inside the bin."
+  },
+  "modalities": {
+    "vision": {
+      "streams": [
+        {
+          "sensor_id": "cam_front_rgb",
+          "type": "rgb",
+          "frame_rate_hz": 30.0,
+          "resolution": "1280x720",
+          "timestamps": [1738620000000, 1738620000033, 1738620000066],
+          "data_ref": "data/vision/example_0001/front_rgb.mp4"
+        },
+        {
+          "sensor_id": "cam_front_depth",
+          "type": "depth",
+          "frame_rate_hz": 30.0,
+          "resolution": "1280x720",
+          "timestamps": [1738620000000, 1738620000033, 1738620000066],
+          "data_ref": "data/vision/example_0001/front_depth.mp4"
+        }
+      ]
+    },
+    "proprioception": {
+      "sensor_id": "arm_joint_imu",
+      "sampling_rate_hz": 100.0,
+      "timestamps": [1738620000000, 1738620000010, 1738620000020],
+      "joint_states": [0.12, -0.34, 0.56, 1.02, -0.18, 0.07],
+      "imu": {
+        "acc": [0.02, -0.01, 9.79],
+        "gyro": [0.001, 0.002, -0.001]
+      }
+    },
+    "audio": {
+      "sensor_id": "mic_01",
+      "sampling_rate_hz": 16000.0,
+      "timestamps": [1738620000000],
+      "data_ref": "data/audio/example_0001/mic.wav"
+    },
+    "language": {
+      "transcript": "",
+      "timestamps": []
+    },
+    "tactile": {
+      "sensor_id": "gripper_ft",
+      "timestamps": [1738620000000, 1738620000050, 1738620000100],
+      "force": [0.0, 1.2, 2.8],
+      "pressure": [0.0, 0.3, 0.7]
+    }
+  },
+  "metadata": {
+    "source": "simulation",
+    "dataset_id": "phase1_schema_examples",
+    "robot_platform": "aido_unit_v2",
+    "environment": "sim",
+    "frame_of_reference": "world",
+    "sensors": [
+      {
+        "sensor_id": "cam_front_rgb",
+        "sensor_type": "camera",
+        "source_id": "isaac_sim/cam_front_rgb",
+        "calibration_ref": "calib/aido_unit_v2/cam_front_rgb_v1.json"
+      },
+      {
+        "sensor_id": "cam_front_depth",
+        "sensor_type": "camera",
+        "source_id": "isaac_sim/cam_front_depth",
+        "calibration_ref": "calib/aido_unit_v2/cam_front_depth_v1.json"
+      },
+      {
+        "sensor_id": "arm_joint_imu",
+        "sensor_type": "imu",
+        "source_id": "isaac_sim/arm_joint_imu",
+        "calibration_ref": "calib/aido_unit_v2/imu_v1.json"
+      },
+      {
+        "sensor_id": "mic_01",
+        "sensor_type": "mic",
+        "source_id": "isaac_sim/mic_01",
+        "calibration_ref": "calib/aido_unit_v2/mic_v1.json"
+      },
+      {
+        "sensor_id": "gripper_ft",
+        "sensor_type": "tactile",
+        "source_id": "isaac_sim/gripper_ft",
+        "calibration_ref": "calib/aido_unit_v2/gripper_ft_v1.json"
+      }
+    ],
+    "notes": "Schema-only example. Payload files referenced by data_ref are placeholders."
+  }
+}

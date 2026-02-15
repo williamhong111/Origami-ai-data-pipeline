@@ -1,0 +1,77 @@
+{
+  "schema_version": "v1.0",
+  "sample_id": "string",
+  "global_timestamp": {
+    "time_base": "unix_epoch_ms",
+    "start_ts": "int",
+    "end_ts": "int"
+  },
+  "task_context": {
+    "task_id": "string",
+    "task_type": "manipulation | navigation | interaction | other",
+    "goal_description": "string",
+    "language_instruction": {
+      "text": "string",
+      "language": "en | zh | mixed",
+      "source": "human | llm | scripted"
+    },
+    "user_intent": "string",
+    "success_criteria": "string"
+  },
+  "modalities": {
+    "vision": {
+      "streams": [
+        {
+          "sensor_id": "string",
+          "type": "rgb | depth",
+          "frame_rate_hz": "float",
+          "resolution": "string",
+          "timestamps": "array[int]",
+          "data_ref": "path_or_uri"
+        }
+      ]
+    },
+    "proprioception": {
+      "sensor_id": "string",
+      "sampling_rate_hz": "float",
+      "timestamps": "array[int]",
+      "joint_states": "array[float]",
+      "imu": {
+        "acc": "array[float]",
+        "gyro": "array[float]"
+      }
+    },
+    "audio": {
+      "sensor_id": "string",
+      "sampling_rate_hz": "float",
+      "timestamps": "array[int]",
+      "data_ref": "path_or_uri"
+    },
+    "language": {
+      "transcript": "string",
+      "timestamps": "array[int]"
+    },
+    "tactile": {
+      "sensor_id": "string",
+      "timestamps": "array[int]",
+      "force": "array[float]",
+      "pressure": "array[float]"
+    }
+  },
+  "metadata": {
+    "source": "simulation | real_world",
+    "dataset_id": "string",
+    "robot_platform": "string",
+    "environment": "lab | home | warehouse | outdoor | sim",
+    "frame_of_reference": "base_link | world",
+    "sensors": [
+      {
+        "sensor_id": "string",
+        "sensor_type": "camera | imu | joint | mic | tactile | other",
+        "source_id": "string",
+        "calibration_ref": "path_or_uri_or_hash"
+      }
+    ],
+    "notes": "string"
+  }
+}
