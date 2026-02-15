@@ -4,18 +4,27 @@ real_world_ingest_pipeline.py — Main Ingestion Pipeline
 Chains all modules together:
     DataLoader → DataNormalizer → SchemaPacker → Validator
 
-This is the Phase 2 deliverable that demonstrates end-to-end
-conversion from raw data to canonical schema records.
+Supports multiple data sources:
+    - NVIDIA Isaac Sim (HDF5)
+    - Google RT-1 (TFRecord)
+    - Any future source with a YAML config
 
 Usage:
     # Process Isaac Sim data (default):
     python real_world_ingest_pipeline.py
 
+    # Process RT-1 data:
+    python real_world_ingest_pipeline.py \
+        --config source_configs/rt1.yaml \
+        --data ../fractal20220817_data-train.tfrecord-00000-of-01024 \
+        --max-episodes 3 \
+        --output-dir output_rt1/
+
     # Custom source and file:
-    python real_world_ingest_pipeline.py \\
-        --config source_configs/isaac_sim.yaml \\
-        --data mimic_dataset_1k.hdf5 \\
-        --max-episodes 5 \\
+    python real_world_ingest_pipeline.py \
+        --config source_configs/isaac_sim.yaml \
+        --data mimic_dataset_1k.hdf5 \
+        --max-episodes 5 \
         --output-dir output/
 """
 
@@ -50,7 +59,7 @@ def run_pipeline(config_path: str, data_path: str,
         output_dir:    Directory for output JSON files
     """
     print("=" * 60)
-    print("  Origami AI — Multimodal Data Ingestion Pipeline")
+    print("  Multimodal Data Ingestion Pipeline")
     print("  Phase 2: Real-World Data Pipeline")
     print("=" * 60)
     start_time = time.time()
@@ -74,10 +83,14 @@ def run_pipeline(config_path: str, data_path: str,
     for ep in episodes:
         normalized = normalizer.normalize(ep)
         normalized_episodes.append(normalized)
+        lang_info = ""
+        if normalized.get("language", {}).get("instruction"):
+            lang_info = f", instruction: '{normalized['language']['instruction'][:50]}'"
         print(f"  → Normalized {ep['demo_id']}: "
               f"{ep['num_steps']} steps, "
               f"timestamps {normalized['global_timestamp']['start_ts']}"
-              f"..{normalized['global_timestamp']['end_ts']}")
+              f"..{normalized['global_timestamp']['end_ts']}"
+              f"{lang_info}")
 
     # ------------------------------------------------------------------
     # Step 3: Pack into schema
@@ -89,9 +102,12 @@ def run_pipeline(config_path: str, data_path: str,
     for norm_ep in normalized_episodes:
         record = packer.pack(norm_ep)
         records.append(record)
+        lang_text = record.get("task_context", {}).get("language_instruction", {}).get("text", "")
+        lang_info = f", lang: '{lang_text[:40]}'" if lang_text else ""
         print(f"  → Packed {record['sample_id']}: "
               f"{len(record['modalities']['vision']['streams'])} vision streams, "
-              f"{len(record['modalities']['proprioception']['timestamps'])} prop steps")
+              f"{len(record['modalities']['proprioception']['timestamps'])} prop steps"
+              f"{lang_info}")
 
     # ------------------------------------------------------------------
     # Step 4: Validate
@@ -121,8 +137,6 @@ def run_pipeline(config_path: str, data_path: str,
     os.makedirs(output_dir, exist_ok=True)
 
     for record in valid_records:
-        # Remove vision pixel data from JSON (too large)
-        # Only keep references and metadata
         output_record = _strip_large_payloads(record)
 
         filename = f"{record['sample_id']}.json"
@@ -155,10 +169,6 @@ def _strip_large_payloads(record: dict) -> dict:
     """
     import copy
     output = copy.deepcopy(record)
-
-    # Vision: keep everything except raw pixel data (already using data_ref)
-    # The data was already excluded during packing (only data_ref is stored)
-
     return output
 
 
@@ -167,7 +177,7 @@ def _strip_large_payloads(record: dict) -> dict:
 # ------------------------------------------------------------------
 def main():
     parser = argparse.ArgumentParser(
-        description="Origami AI — Multimodal Data Ingestion Pipeline (Phase 2)"
+        description="Multimodal Data Ingestion Pipeline (Phase 2)"
     )
     parser.add_argument(
         "--config", "-c",
@@ -193,13 +203,20 @@ def main():
     args = parser.parse_args()
 
     if args.data is None:
-        # Default paths to try
-        default_paths = [
-            "mimic_dataset_1k.hdf5",
-            "../mimic_dataset_1k.hdf5",
-            os.path.expanduser("~/data/mimic_dataset_1k.hdf5"),
-            os.path.expanduser("~/Desktop/files/mimic_dataset_1k.hdf5"),
-        ]
+        # Auto-detect data file based on config
+        if "rt1" in args.config:
+            default_paths = [
+                "../fractal20220817_data-train.tfrecord-00000-of-01024",
+                os.path.expanduser("~/Desktop/files/fractal20220817_data-train.tfrecord-00000-of-01024"),
+            ]
+        else:
+            default_paths = [
+                "mimic_dataset_1k.hdf5",
+                "../mimic_dataset_1k.hdf5",
+                os.path.expanduser("~/data/mimic_dataset_1k.hdf5"),
+                os.path.expanduser("~/Desktop/files/mimic_dataset_1k.hdf5"),
+            ]
+
         for p in default_paths:
             if os.path.exists(p):
                 args.data = p

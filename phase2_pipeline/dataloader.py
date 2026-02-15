@@ -1,24 +1,20 @@
 """
 dataloader.py — Universal Multimodal Data Loader
 =================================================
-Reads raw data from any source (HDF5, JSON, etc.) using a YAML config
+Reads raw data from any source (HDF5, JSON, TFRecord) using a YAML config
 that maps source-specific fields to a unified intermediate format.
+
+Supported formats:
+    - HDF5  (NVIDIA Isaac Sim, RoboNet, etc.)
+    - TFRecord (Google RT-1, Open X-Embodiment, Bridge, etc.)
+    - JSON  (custom datasets)
 
 Usage:
     loader = DataLoader(config_path="source_configs/isaac_sim.yaml")
     episodes = loader.load("mimic_dataset_1k.hdf5", max_episodes=5)
 
-    # Each episode is a dict with unified keys:
-    # {
-    #     "demo_id": "demo_0",
-    #     "num_steps": 206,
-    #     "vision": { "table_cam_rgb": np.array(...), ... },
-    #     "proprioception": { "joint_pos": np.array(...), ... },
-    #     "actions": np.array(...),
-    #     "audio": {},
-    #     "tactile": {},
-    #     "config": { ... }   # source config for downstream use
-    # }
+    loader = DataLoader(config_path="source_configs/rt1.yaml")
+    episodes = loader.load("fractal20220817_data-train.tfrecord-00000-of-01024", max_episodes=3)
 """
 
 import os
@@ -32,6 +28,14 @@ try:
     HAS_H5PY = True
 except ImportError:
     HAS_H5PY = False
+
+# Optional: tensorflow for TFRecord files
+try:
+    import tensorflow as tf
+    import tensorflow_datasets as tfds
+    HAS_TF = True
+except ImportError:
+    HAS_TF = False
 
 
 class DataLoader:
@@ -71,13 +75,15 @@ class DataLoader:
 
         if self.file_format == "hdf5":
             return self._load_hdf5(file_path, max_episodes)
+        elif self.file_format == "tfrecord":
+            return self._load_tfrecord(file_path, max_episodes)
         elif self.file_format == "json":
             return self._load_json(file_path, max_episodes)
         else:
             raise ValueError(f"Unsupported format: {self.file_format}")
 
     # ------------------------------------------------------------------
-    # HDF5 loader
+    # HDF5 loader (Isaac Sim, RoboNet, etc.)
     # ------------------------------------------------------------------
     def _load_hdf5(self, file_path: str, max_episodes: int) -> list:
         """Load episodes from an HDF5 file."""
@@ -89,7 +95,6 @@ class DataLoader:
 
         # Find all demo groups
         demo_prefix = self.config.get("demo_prefix", "data/demo_")
-        # Navigate to the parent group
         parent_path = "/".join(demo_prefix.rstrip("/").rstrip("_").split("/")[:-1])
         if not parent_path:
             parent_path = "/"
@@ -126,6 +131,7 @@ class DataLoader:
             "actions": None,
             "audio": {},
             "tactile": {},
+            "language": {},
             "config": self.config,
         }
 
@@ -144,7 +150,6 @@ class DataLoader:
                         "source_id": stream_cfg["source_id"],
                         "shape": data.shape,
                     }
-                    # Use first vision stream to determine num_steps
                     if episode["num_steps"] == 0:
                         episode["num_steps"] = data.shape[0]
 
@@ -161,7 +166,6 @@ class DataLoader:
             episode["proprioception"]["sensor_id"] = prop_cfg.get("sensor_id", "")
             episode["proprioception"]["source_id"] = prop_cfg.get("source_id", "")
 
-            # Set num_steps from proprioception if vision didn't set it
             if episode["num_steps"] == 0 and "joint_pos" in episode["proprioception"]:
                 episode["num_steps"] = episode["proprioception"]["joint_pos"].shape[0]
 
@@ -183,6 +187,198 @@ class DataLoader:
         return episode
 
     # ------------------------------------------------------------------
+    # TFRecord loader (RT-1, Open X-Embodiment, Bridge, etc.)
+    # ------------------------------------------------------------------
+    def _load_tfrecord(self, file_path: str, max_episodes: int) -> list:
+        """Load episodes from a TFRecord file using tensorflow_datasets."""
+        if not HAS_TF:
+            raise ImportError(
+                "tensorflow and tensorflow_datasets are required for TFRecord files.\n"
+                "Run: pip install tensorflow tensorflow_datasets"
+            )
+
+        dataset_name = self.config.get("tfrecord_dataset_name", "")
+
+        print(f"[DataLoader] Loading TFRecord: {dataset_name}")
+        print(f"[DataLoader] File: {file_path}")
+        print(f"[DataLoader] Loading via tensorflow_datasets (streaming from GCS)...")
+
+        # Use tfds.load with try_gcs=True
+        # This streams data from Google Cloud Storage (no auth needed for public datasets)
+        ds = tfds.load(
+            dataset_name,
+            split="train",
+            data_dir="gs://gresearch/robotics",
+            try_gcs=True,
+        )
+
+        if max_episodes:
+            ds = ds.take(max_episodes)
+
+        episodes = []
+        for i, example in enumerate(ds):
+            episode = self._parse_tfrecord_episode(example, f"episode_{i}")
+            episodes.append(episode)
+            print(f"  → Parsed episode_{i}: {episode['num_steps']} steps"
+                  f"{', instruction: ' + episode['language'].get('instruction', '')[:50] if episode.get('language') else ''}")
+
+        print(f"[DataLoader] Successfully loaded {len(episodes)} episodes")
+        return episodes
+
+    def _parse_tfrecord_episode(self, example, demo_id: str) -> dict:
+        """Parse a single TFRecord episode into unified intermediate format."""
+
+        episode = {
+            "demo_id": demo_id,
+            "num_steps": 0,
+            "vision": {},
+            "proprioception": {},
+            "actions": None,
+            "audio": {},
+            "tactile": {},
+            "language": {},
+            "config": self.config,
+        }
+
+        # Collect all steps into lists
+        steps = list(example["steps"])
+        num_steps = len(steps)
+        episode["num_steps"] = num_steps
+
+        if num_steps == 0:
+            return episode
+
+        # --- Vision ---
+        vision_cfg = self.config.get("vision", {})
+        if vision_cfg and "streams" in vision_cfg:
+            for stream_cfg in vision_cfg["streams"]:
+                tf_path = stream_cfg.get("tfrecord_path", "")
+                name = stream_cfg["name"]
+
+                # Parse dot-separated path: "observation.image"
+                parts = tf_path.split(".")
+                try:
+                    frames = []
+                    for step in steps:
+                        val = step
+                        for part in parts:
+                            val = val[part]
+                        frames.append(val.numpy())
+
+                    data = np.array(frames)
+                    episode["vision"][name] = {
+                        "data": data,
+                        "type": stream_cfg["type"],
+                        "sensor_id": stream_cfg["sensor_id"],
+                        "source_id": stream_cfg["source_id"],
+                        "shape": data.shape,
+                    }
+                except (KeyError, AttributeError) as e:
+                    print(f"[DataLoader] Warning: Could not extract vision '{name}': {e}")
+
+        # --- Proprioception ---
+        prop_cfg = self.config.get("proprioception", {})
+        if prop_cfg:
+            for field_name, field_cfg in prop_cfg.items():
+                if field_name in ("sensor_id", "source_id"):
+                    continue
+                if not isinstance(field_cfg, dict):
+                    continue
+
+                tf_path = field_cfg.get("tfrecord_path", "")
+                parts = tf_path.split(".")
+
+                try:
+                    values = []
+                    for step in steps:
+                        val = step
+                        for part in parts:
+                            val = val[part]
+                        values.append(val.numpy())
+
+                    episode["proprioception"][field_name] = np.array(values)
+                except (KeyError, AttributeError) as e:
+                    print(f"[DataLoader] Warning: Could not extract prop '{field_name}': {e}")
+
+            episode["proprioception"]["sensor_id"] = prop_cfg.get("sensor_id", "")
+            episode["proprioception"]["source_id"] = prop_cfg.get("source_id", "")
+
+        # --- Actions ---
+        actions_cfg = self.config.get("actions", {})
+        if actions_cfg:
+            action_fields = actions_cfg.get("fields", [])
+            if action_fields:
+                # Concatenate all action fields into a single array
+                all_actions = []
+                for step in steps:
+                    step_action = []
+                    for field in action_fields:
+                        tf_path = field.get("tfrecord_path", "")
+                        parts = tf_path.split(".")
+                        try:
+                            val = step
+                            for part in parts:
+                                val = val[part]
+                            step_action.append(val.numpy().flatten())
+                        except (KeyError, AttributeError):
+                            pass
+                    if step_action:
+                        all_actions.append(np.concatenate(step_action))
+
+                if all_actions:
+                    episode["actions"] = np.array(all_actions)
+            else:
+                # Single action path (like HDF5)
+                h5_path = actions_cfg.get("hdf5_path")
+                if h5_path:
+                    pass  # handled by HDF5 loader
+
+        # --- Language ---
+        lang_cfg = self.config.get("language", {})
+        if lang_cfg and isinstance(lang_cfg, dict):
+            tf_path = lang_cfg.get("tfrecord_path", "")
+            if tf_path:
+                parts = tf_path.split(".")
+                try:
+                    # Get instruction from first step
+                    val = steps[0]
+                    for part in parts:
+                        val = val[part]
+                    instruction = val.numpy()
+                    if isinstance(instruction, bytes):
+                        instruction = instruction.decode("utf-8")
+                    episode["language"] = {
+                        "instruction": instruction,
+                        "language": "en",
+                        "source": "human",
+                    }
+                except (KeyError, AttributeError) as e:
+                    print(f"[DataLoader] Warning: Could not extract language: {e}")
+
+        # --- Attributes (RT-1 specific metadata) ---
+        if "attributes" in example:
+            attrs = example["attributes"]
+            episode["rt1_attributes"] = {}
+            for k, v in attrs.items():
+                try:
+                    val = v.numpy()
+                    if isinstance(val, bytes):
+                        val = val.decode("utf-8")
+                    episode["rt1_attributes"][k] = val
+                except:
+                    pass
+
+        # --- Audio (empty if not present) ---
+        if not self.config.get("audio"):
+            episode["audio"] = {}
+
+        # --- Tactile (empty if not present) ---
+        if not self.config.get("tactile"):
+            episode["tactile"] = {}
+
+        return episode
+
+    # ------------------------------------------------------------------
     # JSON loader (for future data sources)
     # ------------------------------------------------------------------
     def _load_json(self, file_path: str, max_episodes: int) -> list:
@@ -190,7 +386,6 @@ class DataLoader:
         with open(file_path, "r") as f:
             raw_data = json.load(f)
 
-        # Assumes JSON is a list of episode records
         if isinstance(raw_data, list):
             episodes_raw = raw_data[:max_episodes] if max_episodes else raw_data
         elif isinstance(raw_data, dict) and "episodes" in raw_data:
@@ -208,6 +403,7 @@ class DataLoader:
                 "actions": ep_raw.get("actions"),
                 "audio": ep_raw.get("audio", {}),
                 "tactile": ep_raw.get("tactile", {}),
+                "language": ep_raw.get("language", {}),
                 "config": self.config,
             }
             episodes.append(episode)
@@ -234,12 +430,19 @@ class DataLoader:
         if vision_cfg and "streams" in vision_cfg:
             print(f"Vision streams: {len(vision_cfg['streams'])}")
             for s in vision_cfg["streams"]:
-                print(f"  - {s['name']} ({s['type']}): {s['hdf5_path']}")
+                path_key = "hdf5_path" if "hdf5_path" in s else "tfrecord_path"
+                print(f"  - {s['name']} ({s['type']}): {s.get(path_key, 'N/A')}")
 
         prop_cfg = self.config.get("proprioception", {})
         if prop_cfg:
             fields = [k for k in prop_cfg if isinstance(prop_cfg.get(k), dict)]
             print(f"Proprioception fields: {fields}")
+
+        lang_cfg = self.config.get("language", {})
+        if lang_cfg and isinstance(lang_cfg, dict):
+            print(f"Language: present (from {lang_cfg.get('tfrecord_path', 'config')})")
+        else:
+            print(f"Language: not available")
 
         for mod in ["audio", "tactile", "imu"]:
             val = self.config.get(mod)
@@ -269,3 +472,5 @@ if __name__ == "__main__":
             print(f"  Actions shape:       {ep['actions'].shape if ep['actions'] is not None else 'None'}")
             print(f"  Audio:               {'present' if ep['audio'] else 'empty'}")
             print(f"  Tactile:             {'present' if ep['tactile'] else 'empty'}")
+            if ep.get("language"):
+                print(f"  Language:            {ep['language'].get('instruction', 'N/A')[:80]}")

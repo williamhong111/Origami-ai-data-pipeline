@@ -68,8 +68,8 @@ class Validator:
     VALID_LANGUAGES = {"en", "zh", "mixed"}
     VALID_SOURCES = {"human", "llm", "scripted"}
     VALID_DATA_SOURCES = {"simulation", "real_world"}
-    VALID_ENVIRONMENTS = {"lab", "home", "warehouse", "outdoor", "sim"}
-    VALID_FRAMES = {"base_link", "world"}
+    VALID_ENVIRONMENTS = {"lab", "home", "warehouse", "outdoor", "sim", "real"}
+    VALID_FRAMES = {"base_link", "base", "world"}
     VALID_SENSOR_TYPES = {"camera", "imu", "joint", "mic", "tactile", "other"}
     VALID_VISION_TYPES = {"rgb", "depth"}
 

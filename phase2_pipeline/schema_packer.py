@@ -36,6 +36,7 @@ class SchemaPacker:
         task_cfg = config.get("task_context", {})
         meta_cfg = config.get("metadata", {})
         demo_id = normalized["demo_id"]
+        language_data = normalized.get("language", {})
 
         record = {
             "schema_version": self.SCHEMA_VERSION,
@@ -45,14 +46,14 @@ class SchemaPacker:
             "global_timestamp": normalized["global_timestamp"],
 
             # --- Task context ---
-            "task_context": self._pack_task_context(task_cfg, demo_id),
+            "task_context": self._pack_task_context(task_cfg, demo_id, language_data),
 
             # --- Modalities ---
             "modalities": {
                 "vision":         self._pack_vision(normalized.get("vision", {})),
                 "proprioception": self._pack_proprioception(normalized.get("proprioception", {})),
                 "audio":          self._pack_audio(normalized.get("audio", {})),
-                "language":       self._pack_language(),
+                "language":       self._pack_language(language_data),
                 "tactile":        self._pack_tactile(normalized.get("tactile", {})),
             },
 
@@ -65,18 +66,30 @@ class SchemaPacker:
     # ------------------------------------------------------------------
     # Task context
     # ------------------------------------------------------------------
-    def _pack_task_context(self, task_cfg: dict, demo_id: str) -> dict:
-        """Map task context from config into schema."""
+    def _pack_task_context(self, task_cfg: dict, demo_id: str, language_data: dict = None) -> dict:
+        """Map task context from config into schema.
+        
+        If language_data has a real instruction (e.g. from RT-1), use it.
+        Otherwise fall back to the config's scripted instruction.
+        """
         lang_cfg = task_cfg.get("language_instruction", {})
+        
+        # Use actual language instruction from data if available
+        if language_data and language_data.get("instruction"):
+            instruction_text = language_data["instruction"]
+            instruction_source = language_data.get("source", "human")
+        else:
+            instruction_text = lang_cfg.get("text", "")
+            instruction_source = lang_cfg.get("source", "scripted")
 
         return {
             "task_id": f"{task_cfg.get('task_type', 'unknown')}_{demo_id}",
             "task_type": task_cfg.get("task_type", "other"),
-            "goal_description": task_cfg.get("goal_description", ""),
+            "goal_description": language_data.get("instruction", "") if language_data and language_data.get("instruction") else task_cfg.get("goal_description", ""),
             "language_instruction": {
-                "text": lang_cfg.get("text", ""),
+                "text": instruction_text,
                 "language": lang_cfg.get("language", "en"),
-                "source": lang_cfg.get("source", "scripted"),
+                "source": instruction_source,
             },
             "user_intent": task_cfg.get("user_intent", ""),
             "success_criteria": task_cfg.get("success_criteria", ""),
@@ -96,8 +109,6 @@ class SchemaPacker:
         streams = []
 
         for stream_name, stream_info in vision_data.items():
-            # Vision payloads stored externally, referenced via data_ref
-            # In this implementation, we record the reference path
             data_ref = f"data/vision/{stream_name}.npy"
 
             stream_record = {
@@ -153,12 +164,19 @@ class SchemaPacker:
     # ------------------------------------------------------------------
     # Language
     # ------------------------------------------------------------------
-    def _pack_language(self) -> dict:
+    def _pack_language(self, language_data: dict = None) -> dict:
         """
         Map language modality into schema.
 
-        Language transcript is optional per metadata_annotations_spec.md.
+        If language_data is provided (e.g. from RT-1), include the
+        instruction as transcript. Otherwise empty.
         """
+        if language_data and language_data.get("instruction"):
+            return {
+                "transcript": language_data["instruction"],
+                "timestamps": [],
+            }
+
         return {
             "transcript": "",
             "timestamps": [],

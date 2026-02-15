@@ -11,6 +11,8 @@ following the rules defined in normalization_rules.md:
   - Tactile:         unix_epoch_ms timestamps, consistent units
   - Missing data:    keep required keys, use empty arrays
 
+Supports both Isaac Sim (HDF5) and RT-1 (TFRecord) data formats.
+
 Usage:
     normalizer = DataNormalizer()
     normalized = normalizer.normalize(episode)
@@ -76,6 +78,7 @@ class DataNormalizer:
             "actions": self._normalize_actions(episode.get("actions")),
             "audio": self._normalize_audio(episode.get("audio", {}), start_ts),
             "tactile": self._normalize_tactile(episode.get("tactile", {}), start_ts),
+            "language": self._normalize_language(episode.get("language", {})),
             "config": config,
         }
 
@@ -150,6 +153,9 @@ class DataNormalizer:
         - Joint states in radians
         - IMU: acc in m/s^2, gyro in rad/s
         - Missing fields → empty arrays
+
+        Handles both Isaac Sim fields (joint_pos, joint_vel, eef_pos, etc.)
+        and RT-1 fields (base_pose_tool_reached, gripper_closed, etc.)
         """
         # Generate timestamps at control rate
         timestamps = [start_ts + i * step_duration_ms for i in range(num_steps)]
@@ -172,7 +178,7 @@ class DataNormalizer:
             },
         }
 
-        # Map available fields
+        # --- Isaac Sim fields ---
         if "joint_pos" in prop_data and isinstance(prop_data["joint_pos"], np.ndarray):
             normalized["joint_states"] = prop_data["joint_pos"].tolist()
 
@@ -188,7 +194,19 @@ class DataNormalizer:
         if "gripper_pos" in prop_data and isinstance(prop_data["gripper_pos"], np.ndarray):
             normalized["gripper_pos"] = prop_data["gripper_pos"].tolist()
 
-        # IMU — not present in Isaac Sim Mimic, keep empty per missing data policy
+        # --- RT-1 fields ---
+        # RT-1 uses base_pose_tool_reached (7D) as its main proprioceptive state
+        # Map it to joint_states for schema compatibility
+        if "base_pose_tool_reached" in prop_data and isinstance(prop_data["base_pose_tool_reached"], np.ndarray):
+            if not normalized["joint_states"]:  # Only if not already set by Isaac Sim fields
+                normalized["joint_states"] = prop_data["base_pose_tool_reached"].tolist()
+
+        # RT-1 gripper_closed → gripper_pos
+        if "gripper_closed" in prop_data and isinstance(prop_data["gripper_closed"], np.ndarray):
+            if not normalized["gripper_pos"]:
+                normalized["gripper_pos"] = prop_data["gripper_closed"].tolist()
+
+        # IMU — not present in Isaac Sim or RT-1, keep empty
         if "imu_acc" in prop_data and isinstance(prop_data["imu_acc"], np.ndarray):
             normalized["imu"]["acc"] = prop_data["imu_acc"].tolist()
 
@@ -256,6 +274,29 @@ class DataNormalizer:
             "timestamps": tactile_data.get("timestamps", []),
             "force": tactile_data.get("force", []),
             "pressure": tactile_data.get("pressure", []),
+        }
+
+    # ------------------------------------------------------------------
+    # Language normalization
+    # ------------------------------------------------------------------
+    def _normalize_language(self, language_data: dict) -> dict:
+        """
+        Normalize language data.
+
+        RT-1 provides per-episode natural language instructions.
+        Isaac Sim uses scripted instructions from config.
+        """
+        if not language_data:
+            return {
+                "instruction": "",
+                "language": "en",
+                "source": "scripted",
+            }
+
+        return {
+            "instruction": language_data.get("instruction", ""),
+            "language": language_data.get("language", "en"),
+            "source": language_data.get("source", "human"),
         }
 
 

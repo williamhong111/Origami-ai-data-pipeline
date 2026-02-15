@@ -1,0 +1,94 @@
+# ============================================================
+# RT-1 / Google Fractal TFRecord → Schema Mapping
+# ============================================================
+# Config for Google's RT-1 dataset (fractal20220817_data).
+# Real-world robot manipulation data collected over 17 months
+# using 13 Everyday Robots in office kitchen environments.
+#
+# Data format: TFRecord (tensorflow_datasets)
+# Dataset: fractal20220817_data (87,212 episodes, 111 GB)
+# ============================================================
+
+# --- Source metadata ---
+source_name: "rt1_fractal"
+format: "tfrecord"
+tfrecord_dataset_name: "fractal20220817_data"
+tfrecord_data_dir: "gs://gresearch/robotics"
+
+# --- Schema metadata defaults ---
+metadata:
+  source: "real_world"
+  dataset_id: "rt1_fractal20220817"
+  robot_platform: "everyday_robots_edr"
+  environment: "real"
+  frame_of_reference: "base"
+
+# --- Task context defaults ---
+# NOTE: RT-1 has per-episode language instructions, so
+# task_context.language_instruction.text will be overridden
+# by the actual instruction from each episode.
+task_context:
+  task_type: "manipulation"
+  goal_description: "Execute manipulation task as described by natural language instruction."
+  language_instruction:
+    text: ""                # Overridden per episode from observation.natural_language_instruction
+    language: "en"
+    source: "human"         # RT-1 instructions are human-written
+  user_intent: "manipulation"
+  success_criteria: "Task completed as described by instruction."
+
+# --- Modality field mappings ---
+# TFRecord paths use dot notation for nested fields
+# Each episode has "steps" → each step has "observation" and "action"
+
+vision:
+  streams:
+    - name: "head_cam_rgb"
+      type: "rgb"
+      tfrecord_path: "observation.image"       # shape: (256, 320, 3), uint8
+      sensor_id: "cam_head_rgb"
+      source_id: "edr/cam_head_rgb"
+
+proprioception:
+  base_pose_tool_reached:
+    tfrecord_path: "observation.base_pose_tool_reached"   # shape: (7,), float32
+  gripper_closed:
+    tfrecord_path: "observation.gripper_closed"            # shape: (1,), float32
+  gripper_closedness_commanded:
+    tfrecord_path: "observation.gripper_closedness_commanded"  # shape: (1,)
+  height_to_bottom:
+    tfrecord_path: "observation.height_to_bottom"          # shape: (1,)
+  orientation_box:
+    tfrecord_path: "observation.orientation_box"            # shape: (2, 3)
+  sensor_id: "edr_proprioception"
+  source_id: "edr/proprioception"
+
+actions:
+  fields:
+    - name: "world_vector"
+      tfrecord_path: "action.world_vector"                # shape: (3,), xyz position
+    - name: "rotation_delta"
+      tfrecord_path: "action.rotation_delta"              # shape: (3,), rpy rotation
+    - name: "gripper_closedness_action"
+      tfrecord_path: "action.gripper_closedness_action"   # shape: (1,), gripper
+    - name: "base_displacement_vector"
+      tfrecord_path: "action.base_displacement_vector"    # shape: (2,), base xy
+    - name: "base_displacement_vertical_rotation"
+      tfrecord_path: "action.base_displacement_vertical_rotation"  # shape: (1,)
+    - name: "terminate_episode"
+      tfrecord_path: "action.terminate_episode"           # shape: (3,), one-hot
+
+# --- Language (from per-step observation) ---
+language:
+  tfrecord_path: "observation.natural_language_instruction"
+  embedding_path: "observation.natural_language_embedding"   # shape: (512,), USE embedding
+
+# --- Modalities NOT present in this source ---
+audio: null
+tactile: null
+imu: null
+
+# --- Sampling info ---
+# RT-1 controls at 3 Hz (commands actions at 3 Hz)
+sampling:
+  control_rate_hz: 3.0
