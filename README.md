@@ -170,7 +170,7 @@ No Python code changes required.
 | Source | Type | Status | Description |
 |---|---|---|---|
 | **NVIDIA Isaac Sim** | Simulation | ✅ Integrated | 1,000 Franka Panda manipulation demos (cube stacking) |
-| **RT-1** | Real-world | 🔜 Planned | Google's 130K episode multi-task robot dataset |
+| **RT-1** | Real-world | ✅ Integrated | Google's 130K episode multi-task robot dataset |
 
 ---
 
@@ -178,7 +178,7 @@ No Python code changes required.
 
 - [x] **Phase 1** — Unified multimodal schema & metadata spec
 - [x] **Phase 2** — Config-driven ingestion pipeline with validation
-- [ ] **Phase 3** — RT-1 integration, HDF5 batch export, multi-source benchmarking
+
 
 ---
 
