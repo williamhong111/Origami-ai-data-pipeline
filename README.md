@@ -199,7 +199,7 @@ No Python code changes required.
 
 ## Presentation
 
-📊 [Project Slide Deck](Multimodal_Robotics_Data_Pipeline.pptx)
+📊 [Project Slide Deck](Multimodal_Robotics_Data_Pipeline_v2.pptx)
 ---
 
 ## License
