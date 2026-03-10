@@ -1,57 +1,50 @@
-# 🤖 Multimodal Robotics Data Pipeline
+# 🤖 Origami AI — Multimodal Robotics Learning Pipeline
 
-A production-ready data ingestion pipeline that standardizes heterogeneous robot sensor data into a unified canonical schema. Designed to support scalable training of robotics foundation models across simulation and real-world environments.
+An end-to-end ML pipeline that ingests multimodal robot sensor data, trains object detection models, and evaluates sim-to-real transfer readiness. Built for robotics foundation model development using NVIDIA Isaac Sim simulation data.
 
 **Built at InGen Dynamics**  
-**Author:** William Hong — ML Engineering Intern  
+**Author:** William Hong — ML Engineering Intern
 
 ---
 
-## Problem
+## Results
 
-Modern robot learning requires data from many modalities — RGB cameras, depth sensors, joint encoders, IMUs, microphones, tactile sensors, and language instructions. Each source uses different formats, sampling rates, coordinate frames, and storage layouts. This fragmentation creates a major bottleneck for training general-purpose robotics models at scale.
+| Metric | Value |
+|--------|-------|
+| **Best mAP** | 0.930 |
+| **Baseline Accuracy** | 98.8% |
+| **Stress Test (worst case)** | 95.2% (camera angle shift) |
+| **Inference Confidence** | 0.99–1.00 |
+| **Training Data** | NVIDIA Isaac Sim (Franka Panda cube stacking) |
 
-## Solution
-
-This pipeline provides:
-
-- **A unified multimodal schema** (`data_schema_v1.json`) — a single versioned JSON structure that can represent any robot interaction episode regardless of source
-- **Config-driven ingestion** — add a new data source by writing a YAML config; no code changes needed
-- **Automated validation** — enforces schema compliance, timestamp consistency, and sensor ID integrity before data enters the training pipeline
-
-**Result:** Reduced data onboarding time from ~2 days of custom scripting per source to <1 hour of YAML configuration.
+<p align="center">
+  <img src="docs/inference_visualization.png" width="80%" alt="Inference Demo">
+</p>
 
 ---
 
 ## Architecture
 
 ```
-                        ┌──────────────────────────────────────────┐
-                        │          Ingestion Pipeline              │
-                        │                                          │
- ┌───────────────┐      │  ┌────────────┐    ┌────────────────┐   │    ┌──────────────┐
- │  Isaac Sim    │──┐   │  │            │    │                │   │    │              │
- │  (HDF5)      │  │   │  │ DataLoader │───▶│  Normalizer    │   │    │  Canonical   │
- └───────────────┘  │   │  │            │    │                │   │    │  Schema v1   │
-                    │   │  │ • Reads    │    │ • Resamples to │   │    │  (JSON)      │
- ┌───────────────┐  │   │  │   YAML     │    │   target Hz    │   │    │              │
- │  RT-1         │──┼──▶│  │   config   │    │ • Aligns       │   │──▶ │ • Validated  │
- │  (TFRecord)   │  │   │  │ • Maps     │    │   timestamps   │   │    │ • Normalized │
- └───────────────┘  │   │  │   fields   │    │ • Converts     │   │    │ • Ready for  │
-                    │   │  └────────────┘    │   units        │   │    │   training   │
- ┌───────────────┐  │   │                    └───────┬────────┘   │    │              │
- │  Real Robot   │──┘   │                            │            │    └──────────────┘
- │  (ROS bags)   │      │                    ┌───────▼────────┐   │           │
- └───────────────┘      │                    │ Schema Packer  │   │           │
-                        │                    │ + Validator    │   │    ┌──────▼───────┐
- ┌───────────────┐      │                    │               │   │    │   Output/     │
- │  YAML Config  │─────▶│                    │ • Pack → JSON  │   │    │   *.json      │
- │  per source   │      │                    │ • Validate     │   │    └──────────────┘
- └───────────────┘      │                    │   schema       │   │
-                        │                    │ • Check        │   │
-                        │                    │   timestamps   │   │
-                        │                    └────────────────┘   │
-                        └──────────────────────────────────────────┘
+┌─────────────────────────────────────────────────────────────────┐
+│                        Origami AI Pipeline                       │
+│                                                                   │
+│  Phase 1              Phase 2                 Phase 3             │
+│  ────────             ────────                ────────            │
+│  Schema               Ingestion               ML Training         │
+│  Definition           Pipeline                Pipeline            │
+│                                                                   │
+│  data_schema_v1.json  HDF5 → Normalize       Dataset → Model     │
+│  metadata specs       → Validate → JSON      → Train → Evaluate  │
+│                       YAML-driven            Faster R-CNN +       │
+│                       Zero-code onboarding   Depth Fusion         │
+└─────────────────────────────────────────────────────────────────┘
+
+Data Flow:
+  mimic_dataset_1k.hdf5 ──→ Phase 2 (validate) ──→ Phase 3 (train)
+                              ↓                       ↓
+                         output/*.json          best_model.pth
+                         (metadata)             (mAP 0.93)
 ```
 
 ---
@@ -59,148 +52,167 @@ This pipeline provides:
 ## Project Structure
 
 ```
-multimodal-robotics-pipeline/
+origami-ai/
 │
-├── README.md
-│
-├── schema/
-│   ├── data_schema_v1.json            # Canonical multimodal schema
-│   ├── metadata_annotations_spec.md   # Field semantics & annotation rules
+├── schema/                              # Phase 1 — Data Schema
+│   ├── data_schema_v1.json              # Canonical multimodal schema
+│   ├── metadata_annotations_spec.md     # Field semantics & rules
 │   └── examples/
-│       └── sample_example_v1.json     # Example populated record
+│       └── sample_example_v1.json
 │
-└── pipeline/
-    ├── real_world_ingest_pipeline.py   # Main pipeline orchestrator
-    ├── dataloader.py                   # Universal config-driven data reader
-    ├── data_normalizer.py              # Timestamp & sampling normalization
-    ├── schema_packer.py                # Maps normalized data → schema JSON
-    ├── validator.py                    # Schema compliance checker
-    ├── source_configs/
-    │   └── isaac_sim.yaml              # NVIDIA Isaac Sim field mapping
-    └── output/
-        ├── nvidia_mimic_franka_stack_demo_0.json
-        ├── nvidia_mimic_franka_stack_demo_1.json
-        └── nvidia_mimic_franka_stack_demo_2.json
+├── pipeline/                            # Phase 2 — Data Ingestion
+│   ├── real_world_ingest_pipeline.py    # Main orchestrator
+│   ├── dataloader.py                    # Universal config-driven reader
+│   ├── data_normalizer.py              # Timestamp & sampling normalization
+│   ├── schema_packer.py                # Maps data → schema JSON
+│   ├── validator.py                    # Schema compliance checker
+│   └── source_configs/
+│       ├── isaac_sim.yaml              # NVIDIA Isaac Sim config
+│       └── rt1.yaml                    # Google RT-1 config
+│
+├── ml/                                  # Phase 3 — ML Training
+│   ├── datasets/
+│   │   └── origami_dataset.py          # PyTorch Dataset + quality report
+│   ├── models/
+│   │   ├── yolo_detector.py            # Faster R-CNN + Depth fusion
+│   │   └── fusion_transformer.py       # Bonus: Cross-attention fusion
+│   ├── training/
+│   │   └── train.py                    # Train loop + early stopping
+│   ├── evaluation/
+│   │   └── evaluate.py                 # Stress test + visualization
+│   └── reports/
+│       ├── data_quality_report.md      # Auto-generated
+│       └── sim2real_analysis.md        # Sim-to-real gap analysis
+│
+├── docs/                                # Documentation & visuals
+│   ├── workflow_results.pptx
+│   ├── inference_visualization.png
+│   ├── batch_visualization.png
+│   └── training_curves.png
+│
+├── .gitignore
+└── README.md
 ```
+
+---
+
+## Phase 1 — Unified Data Schema
+
+Defines a canonical JSON schema that can represent any robot interaction episode regardless of source. Supports 5 modalities: vision (RGB/depth), proprioception (joints/IMU), audio, language, and tactile.
+
+## Phase 2 — Data Ingestion Pipeline
+
+Config-driven pipeline that converts raw HDF5/TFRecord data into validated schema records. Adding a new data source requires only a YAML config — no code changes.
+
+| Source | Type | Episodes |
+|--------|------|----------|
+| NVIDIA Isaac Sim | Simulation | 1,000 |
+| Google RT-1 | Real-world | 130,000 |
+
+## Phase 3 — ML Training Pipeline
+
+Trains a Faster R-CNN object detector with multi-modal fusion (RGB + Depth) on Isaac Sim data. Includes domain randomization stress testing and sim-to-real readiness analysis.
+
+### Baseline Model
+
+| Component | Details |
+|-----------|---------|
+| Backbone | ResNet50-FPN v2 (pretrained COCO) |
+| Fusion | Early concat: RGB + Depth → 3ch |
+| Classes | 5 (background, red/blue/green cube, robot arm) |
+| Total Params | 43.3M |
+| Fusion Params | 6,930 |
+
+### Bonus: Multi-Modal Fusion Transformer
+
+Upgrades the baseline concat fusion to a **cross-attention Transformer** — inspired by modern robotics models (RT-2, Octo).
+
+| Component | Details |
+|-----------|---------|
+| Architecture | Patch Embedding → Cross-Attention → Reconstruct |
+| Mechanism | RGB tokens query Depth tokens via multi-head attention |
+| Layers | 2 cross-attention layers, 4 heads, 128-dim embeddings |
+| Fusion Params | 627,462 (vs 6,930 baseline) |
+| Total Params | 43.9M |
+
+**Why Transformer over concat?** Concat just stacks RGB and Depth together — no interaction between modalities. Cross-attention lets RGB features selectively attend to relevant depth information at each spatial location, learning *where* depth matters most for detection. This is critical for distinguishing objects with similar colors but different depths (e.g., a red sticker vs a red cube).
+
+### Training Results
+
+| Metric | Value |
+|--------|-------|
+| Best mAP | 0.930 |
+| Final Train Loss | 0.010 |
+| Final Val Loss | 0.088 |
+| Epochs | 10 (early stopping) |
+
+### Domain Randomization Stress Test
+
+| Scenario | Accuracy | Drop |
+|----------|:--------:|:----:|
+| Baseline (clean) | 98.8% | 0.0% |
+| Lighting Changes | 98.8% | 0.0% |
+| Camera Angle Shift | 95.2% | 3.6% |
+| Texture Randomization | 98.8% | 0.0% |
+| Combined (all) | 98.8% | 0.0% |
 
 ---
 
 ## Quick Start
 
-### Requirements
-
-- Python 3.10+
-- Dependencies: `h5py`, `numpy`, `pyyaml`
-
 ```bash
-pip install h5py numpy pyyaml
-```
+# Clone
+git clone https://github.com/yourusername/origami-ai.git
+cd origami-ai
 
-### Run the Pipeline
+# Setup
+python3 -m venv venv
+source venv/bin/activate
+pip install torch torchvision h5py numpy pyyaml tensorboard matplotlib
 
-```bash
+# Phase 2 — Run ingestion pipeline
 cd pipeline
-
 python real_world_ingest_pipeline.py \
     --config source_configs/isaac_sim.yaml \
     --data /path/to/mimic_dataset_1k.hdf5 \
-    --max-episodes 3 \
-    --output-dir output/
-```
+    --max-episodes 3
 
-### Expected Output
+# Phase 3 — Train detection model
+cd ../ml
+python training/train.py \
+    --hdf5-path /path/to/mimic_dataset_1k.hdf5 \
+    --config-path ../pipeline/source_configs/isaac_sim.yaml \
+    --max-episodes 20 --epochs 10
 
-```
-============================================================
-  Multimodal Robotics Data Ingestion Pipeline
-============================================================
-[Step 1/4] Loading raw data...
-[Step 2/4] Normalizing data...
-[Step 3/4] Packing into canonical schema...
-[Step 4/4] Validating records...
-
-Validation Report: nvidia_mimic_franka_stack_demo_0
-Status: PASS — All checks passed.
-
-  Pipeline Summary
-  Episodes processed:  3
-  Valid records:       3
-  Total errors:        0
-  Total warnings:      0
-  Time elapsed:        1.08s
-============================================================
+# Phase 3 — Evaluate
+python evaluation/evaluate.py \
+    --checkpoint checkpoints/best_model.pth \
+    --hdf5-path /path/to/mimic_dataset_1k.hdf5 \
+    --config-path ../pipeline/source_configs/isaac_sim.yaml
 ```
 
 ---
 
-## Supported Modalities
+## Data
 
-| Modality | Fields | Normalization Target |
-|---|---|---|
-| **Vision** (RGB / Depth) | sensor_id, frame_rate, resolution, timestamps, data_ref | 30 Hz, 1280×720 |
-| **Proprioception** (Joint / IMU) | joint_states, imu.acc, imu.gyro, timestamps | 100 Hz, radians |
-| **Audio** | sampling_rate, timestamps, data_ref | 16,000 Hz |
-| **Language** | instruction text, language, source | Raw text preserved |
-| **Tactile** | force, pressure, timestamps | unix_epoch_ms |
+| Dataset | Size | Description |
+|---------|------|-------------|
+| NVIDIA Isaac Sim Mimic | 25.5 GB | Franka Panda cube stacking, 1000 demos |
+| Google RT-1 Fractal | 106 MB (shard) | Multi-task real-world robot data |
 
-Missing modalities are handled gracefully — required keys are preserved with empty arrays, following the "do not fabricate data" policy.
-
----
-
-## Adding a New Data Source
-
-1. Create a YAML config in `source_configs/`:
-
-```yaml
-source_name: "my_new_source"
-format: "hdf5"
-
-vision:
-  streams:
-    - name: "front_cam"
-      type: "rgb"
-      hdf5_path: "observations/image"
-      sensor_id: "cam_front"
-
-proprioception:
-  joint_pos:
-    hdf5_path: "observations/joint_positions"
-```
-
-2. Run the pipeline:
-
-```bash
-python real_world_ingest_pipeline.py \
-    --config source_configs/my_new_source.yaml \
-    --data /path/to/data.hdf5
-```
-
-No Python code changes required.
+Data files are not included in this repo (too large). Download from:
+- Isaac Sim: [HuggingFace — NVIDIA PhysicalAI-Robotics-Manipulation-Augmented](https://huggingface.co/datasets/nvidia/PhysicalAI-Robotics-GR00T-Manipulation-Augmented)
+- RT-1: [TensorFlow Datasets — fractal20220817_data](https://www.tensorflow.org/datasets/catalog/fractal20220817_data)
 
 ---
 
-## Integrated Data Sources
+## Tech Stack
 
-| Source | Type | Episodes | Description |
-|---|---|---|---|
-| **NVIDIA Isaac Sim** | Simulation | 1,000 | Franka Panda manipulation demos (cube stacking) |
-| **RT-1** | Real-world | 130,000 | Google's multi-task robot dataset |
+- **ML:** PyTorch, torchvision (Faster R-CNN), TensorBoard
+- **Data:** HDF5 (h5py), TFRecord (tensorflow), NumPy
+- **Simulation:** NVIDIA Isaac Sim, Omniverse Replicator
+- **Robot:** Franka Panda (7-DOF + 2 gripper)
 
----
-
-## Technical Highlights
-
-- **Zero-code onboarding** — YAML-driven architecture means new data sources require configuration only, not pipeline modifications
-- **Strict validation** — every output record passes schema compliance, timestamp monotonicity, and sensor ID integrity checks before entering downstream training
-- **Modality-agnostic normalization** — handles variable sampling rates across sensors with configurable target frequencies
-- **HDF5 native** — reads large-scale robotics datasets directly without intermediate conversion
-
----
-
-## Documentation
-
-
-📊 [Technical Overview — Slide Deck](Multimodal_Robotics_Data_Pipeline_v2.pptx)
 ---
 
 ## License
