@@ -1,0 +1,37 @@
+[
+  {
+    "scenario": "Baseline (clean)",
+    "accuracy": 98.79518072289156,
+    "avg_detections": 1.0,
+    "avg_confidence": 92.62531701215478,
+    "drop_pct": 0.0
+  },
+  {
+    "scenario": "Lighting Changes",
+    "accuracy": 98.79518072289156,
+    "avg_detections": 0.9883720930232558,
+    "avg_confidence": 92.0980459035829,
+    "drop_pct": 0.0
+  },
+  {
+    "scenario": "Camera Angle Shift",
+    "accuracy": 95.18072289156626,
+    "avg_detections": 0.9883720930232558,
+    "avg_confidence": 88.53209233561228,
+    "drop_pct": 3.6144578313252964
+  },
+  {
+    "scenario": "Texture Randomization",
+    "accuracy": 98.79518072289156,
+    "avg_detections": 1.0,
+    "avg_confidence": 93.33501884410548,
+    "drop_pct": 0.0
+  },
+  {
+    "scenario": "Combined (all)",
+    "accuracy": 98.79518072289156,
+    "avg_detections": 0.9767441860465116,
+    "avg_confidence": 92.62038857437844,
+    "drop_pct": 0.0
+  }
+]
